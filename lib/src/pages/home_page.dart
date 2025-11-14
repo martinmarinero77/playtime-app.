@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:playtime/src/controllers/complex_controller.dart';
+import 'package:playtime/src/controllers/equipo_controller.dart';
 import 'package:playtime/src/controllers/reserva_controller.dart';
 import 'package:playtime/src/controllers/user_controller.dart';
 import 'package:playtime/src/models/complex_model.dart';
@@ -22,6 +23,7 @@ class _PlayTimeHomeState extends State<PlayTimeHome> {
   final ComplexController _complexController = ComplexController();
   final ReservaController _reservaController = ReservaController();
   final UserController _userController = UserController();
+  final EquipoController _equipoController = EquipoController();
 
   @override
   void initState() {
@@ -40,6 +42,57 @@ class _PlayTimeHomeState extends State<PlayTimeHome> {
       setState(() {
         _reservationsStream = Stream.value([]);
       });
+    }
+  }
+
+  Future<void> _navigateToEquipoPage(ReservaModel reserva) async {
+    final currentUser = _userController.currentUser;
+    if (currentUser == null) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      String? equipoId = reserva.equipoId;
+      ReservaModel reservaActualizada = reserva;
+
+      if (equipoId == null || equipoId.isEmpty) {
+        equipoId = await _equipoController.createEquipoForReserva(
+          reserva.id,
+          currentUser.uid,
+        );
+        
+        reservaActualizada = ReservaModel(
+          id: reserva.id,
+          usuarioId: reserva.usuarioId,
+          complejoId: reserva.complejoId,
+          complejoNombre: reserva.complejoNombre,
+          canchaNumero: reserva.canchaNumero,
+          canchaDeporte: reserva.canchaDeporte,
+          canchaCapacidad: reserva.canchaCapacidad,
+          horaInicio: reserva.horaInicio,
+          estado: reserva.estado,
+          equipoId: equipoId,
+          miembros: reserva.miembros,
+        );
+      }
+
+      Navigator.pop(context); // Close the loading dialog
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => EquipoReservaPage(reserva: reservaActualizada),
+        ),
+      );
+    } catch (e) {
+      Navigator.pop(context); // Close the loading dialog
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al preparar el equipo: $e')),
+      );
     }
   }
 
@@ -65,7 +118,7 @@ class _PlayTimeHomeState extends State<PlayTimeHome> {
           // Upcoming Events
           _buildSectionHeader('Próximos Partidos'),
           SizedBox(height: 16),
-          _buildUpcomingMatch(),
+          _buildUpcomingMatches(),
           SizedBox(height: 100), // Padding for bottom navigation
         ],
       ),
@@ -273,7 +326,7 @@ class _PlayTimeHomeState extends State<PlayTimeHome> {
     );
   }
 
-  Widget _buildUpcomingMatch() {
+  Widget _buildUpcomingMatches() {
     return StreamBuilder<List<ReservaModel>>(
       stream: _reservationsStream,
       builder: (context, snapshot) {
@@ -305,102 +358,107 @@ class _PlayTimeHomeState extends State<PlayTimeHome> {
           );
         }
 
-        final upcomingMatch = snapshot.data!.first;
-        final formattedDate = DateFormat('EEEE d, HH:mm', 'es').format(upcomingMatch.horaInicio);
-        final playersCount = upcomingMatch.miembros.length;
-        final capacity = upcomingMatch.canchaCapacidad * 2;
+        final upcomingMatches = snapshot.data!.take(2).toList();
 
-        return InkWell(
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => EquipoReservaPage(reserva: upcomingMatch),
-              ),
+        return Column(
+          children: upcomingMatches.map((match) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 16.0),
+              child: _buildMatchCard(match),
             );
-          },
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            padding: EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.grey.withOpacity(0.1),
-                  spreadRadius: 1,
-                  blurRadius: 4,
-                  offset: Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        upcomingMatch.complejoNombre,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: Colors.grey[800],
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        '${formattedDate[0].toUpperCase()}${formattedDate.substring(1)} hs',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[500],
-                        ),
-                      ),
-                      Text(
-                        'Cancha de ${upcomingMatch.canchaDeporte}',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[500],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Container(
-                      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.green[50],
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        upcomingMatch.estado.toUpperCase(),
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Colors.green[700],
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    SizedBox(height: 8),
-                    Text(
-                      '$playersCount/$capacity jugadores',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
+          }).toList(),
         );
       },
+    );
+  }
+
+  Widget _buildMatchCard(ReservaModel upcomingMatch) {
+    final formattedDate = DateFormat('EEEE d, HH:mm', 'es').format(upcomingMatch.horaInicio);
+    final playersCount = upcomingMatch.miembros.length;
+    final capacity = upcomingMatch.canchaCapacidad * 2;
+
+    return InkWell(
+      onTap: () => _navigateToEquipoPage(upcomingMatch),
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.1),
+              spreadRadius: 1,
+              blurRadius: 4,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    upcomingMatch.complejoNombre,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: Colors.grey[800],
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    '${formattedDate[0].toUpperCase()}${formattedDate.substring(1)} hs',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[500],
+                    ),
+                  ),
+                  Text(
+                    'Cancha de ${upcomingMatch.canchaDeporte}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[500],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.green[50],
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    upcomingMatch.estado.toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.green[700],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  '$playersCount/$capacity jugadores',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
